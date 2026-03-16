@@ -1,0 +1,312 @@
+================================================================================
+  ORING CAPTURE — PROJECT DOCUMENTATION
+  Quad Hikrobot Camera Inspection Application
+  Repository: https://github.com/lohithmahamkali29/oring_capture
+================================================================================
+
+
+--------------------------------------------------------------------------------
+1. OVERVIEW
+--------------------------------------------------------------------------------
+
+oring_capture is a Python desktop application for real-time industrial
+inspection of bushing washers (O-rings) using four Hikrobot machine vision
+cameras. It streams live video feeds from all four cameras simultaneously and
+allows the operator to capture synchronized snapshots to disk with a single
+button press.
+
+The application is built with PySide6 for the GUI and uses the Hikrobot MVS
+SDK (MvCameraControl) for camera control and frame acquisition.
+
+
+--------------------------------------------------------------------------------
+2. HARDWARE SETUP
+--------------------------------------------------------------------------------
+
+The application expects exactly four cameras in a dual-pass inspection layout:
+
+  Camera Key   |  Model              |  Interface  |  Role
+  -------------|---------------------|-------------|--------------------
+  p1_gige      |  MV-CA032-10GM #1   |  GigE       |  Pass 1 - Side View
+  p1_usb       |  MV-CA035 #1        |  USB3       |  Pass 1 - Top View
+  p2_gige      |  MV-CA032-10GM #2   |  GigE       |  Pass 2 - Side View
+  p2_usb       |  MV-CA035 #2        |  USB3       |  Pass 2 - Top View
+
+NOTE: GigE cameras require a network connection. The application automatically
+configures their IP addresses at startup to match the host network adapter
+subnet. No manual IP configuration is needed in most cases.
+
+
+--------------------------------------------------------------------------------
+3. SYSTEM REQUIREMENTS
+--------------------------------------------------------------------------------
+
+  Operating System  :  Windows (recommended)
+  Python Version    :  3.9 or higher
+  GUI Framework     :  PySide6 >= 6.5
+  Numeric Library   :  NumPy >= 1.21
+  Camera SDK        :  Hikrobot MVS SDK (MvCameraControl) — must be installed
+                       separately from Hikrobot's official website
+
+  The SDK provides the following modules used by the application:
+    - MvCameraControl_class
+    - CameraParams_header
+    - CameraParams_const
+    - MvErrorDefine_const
+    - PixelType_header
+
+
+--------------------------------------------------------------------------------
+4. INSTALLATION
+--------------------------------------------------------------------------------
+
+Step 1 — Install the Hikrobot MVS SDK
+  Download and install the MVS runtime from Hikrobot's official website.
+  This installs the SDK Python bindings required for camera communication.
+
+Step 2 — Clone the Repository
+  git clone https://github.com/lohithmahamkali29/oring_capture.git
+  cd oring_capture
+
+Step 3 — Install Python Dependencies
+  pip install -r requirements.txt
+
+  This installs:
+    - PySide6 >= 6.5
+    - numpy  >= 1.21
+
+
+--------------------------------------------------------------------------------
+5. RUNNING THE APPLICATION
+--------------------------------------------------------------------------------
+
+  python camera_app.py
+
+The application launches maximized in a dark-themed window using the Qt Fusion
+style with a custom dark palette.
+
+
+--------------------------------------------------------------------------------
+6. USER INTERFACE
+--------------------------------------------------------------------------------
+
+The main window is split into two panels using a horizontal splitter:
+
+
+  6.1  Camera Feed Grid (left panel, 70% width)
+  -----------------------------------------------
+  A 2x2 grid displays live video from all four cameras:
+
+    Top-left     —  Pass 1, Top View  (USB #1)
+    Top-right    —  Pass 1, Side View (GigE #1)
+    Bottom-left  —  Pass 2, Top View  (USB #2)
+    Bottom-right —  Pass 2, Side View (GigE #2)
+
+  Each tile shows "No Stream" before streaming starts.
+  Frames are refreshed approximately every 33 ms (~30 fps).
+
+
+  6.2  Control Panel (right panel, 30% width)
+  ---------------------------------------------
+  Contains all operator controls and status information:
+
+    Camera Status   —  Shows connection state, model name, and IP address
+                       for each of the four cameras.
+
+    Start Stream    —  Enumerates connected cameras, opens them, and begins
+                       live preview. Button turns green when available.
+
+    Capture         —  Saves the current frame from all active cameras to
+                       disk. Enabled only while streaming.
+
+    Stop Stream     —  Stops all worker threads, releases all camera handles.
+
+    Captures Count  —  Displays a running total of captures taken.
+
+    Save Locations  —  Shows the output folder path for each camera.
+
+
+--------------------------------------------------------------------------------
+7. OUTPUT FILES AND FOLDER STRUCTURE
+--------------------------------------------------------------------------------
+
+Captured images are saved as BMP files (no OpenCV dependency — the BMP header
+is constructed manually in the application). Folders are created automatically
+on first run.
+
+  <project_root>/
+  |
+  +-- pass one/
+  |   +-- side view/     <-- p1_side_YYYYMMDD_HHMMSS_mmm.bmp
+  |   +-- topview/       <-- p1_top_YYYYMMDD_HHMMSS_mmm.bmp
+  |
+  +-- pass two/
+      +-- side view/     <-- p2_side_YYYYMMDD_HHMMSS_mmm.bmp
+      +-- topview/       <-- p2_top_YYYYMMDD_HHMMSS_mmm.bmp
+
+Filenames include millisecond-precision timestamps to prevent overwriting
+previous captures.
+
+
+--------------------------------------------------------------------------------
+8. CODE ARCHITECTURE
+--------------------------------------------------------------------------------
+
+The entire application lives in a single file: camera_app.py
+
+
+  8.1  frame_to_numpy(camera, data_buf, frame_info)
+  --------------------------------------------------
+  Converts a raw frame buffer from the MVS SDK into a BGR NumPy array using
+  the SDK's MV_CC_ConvertPixelTypeEx function.
+  Returns None if the conversion fails.
+
+
+  8.2  auto_configure_gige_ip(device_info, ip_offset=200)
+  --------------------------------------------------------
+  Checks whether a GigE camera is on the same subnet as the host network
+  adapter. If not, it calls MV_GIGE_ForceIpEx to push a compatible IP address
+  to the camera.
+  The ip_offset parameter (200 for camera 1, 201 for camera 2) ensures that
+  multiple GigE cameras receive different IP addresses.
+
+
+  8.3  ip_int_to_str(ip_int)
+  --------------------------
+  Converts a 32-bit integer IP address into a human-readable dotted-decimal
+  string (e.g., 192.168.1.200).
+
+
+  8.4  class CameraWorker(Thread)
+  --------------------------------
+  A daemon thread that continuously polls a single camera for new frames using
+  MV_CC_GetOneFrameTimeout (1-second timeout per attempt). The latest decoded
+  frame is stored in self.latest_frame and read by the UI refresh timer.
+
+  Methods:
+    run()   — Main grab loop: polls camera, converts to NumPy, stores frame.
+    stop()  — Sets stop_event to gracefully terminate the thread.
+
+
+  8.5  class MainWindow(QMainWindow)
+  ------------------------------------
+  The primary application window. Qt signals (sig_p1_side, sig_p1_top,
+  sig_p2_side, sig_p2_top) are used to safely pass frames from worker threads
+  to the GUI thread.
+
+  Key Methods:
+
+    _build_ui()
+      Constructs the full UI: splitter layout, 2x2 camera grid, control panel
+      with buttons, status labels, and save path display.
+
+    _connect_signals()
+      Wires button click events and frame signals to their handler methods.
+
+    _find_and_open_cameras()
+      Enumerates all GigE and USB Hikrobot devices. Auto-configures GigE IPs,
+      re-enumerates after IP assignment, then opens each camera and sets the
+      optimal GigE packet size.
+
+    _on_start()
+      Triggers camera discovery, starts frame grabbing on each camera, launches
+      CameraWorker threads, and starts the 33ms QTimer for frame refresh.
+
+    _refresh_frames()
+      Called every 33ms by QTimer. Reads the latest frame from each worker and
+      emits the corresponding Qt signal to update the camera feed label.
+
+    _on_capture()
+      Takes a snapshot of the current frame from each active camera and saves
+      it as a timestamped BMP file in the appropriate output folder.
+
+    _save_bgr_bmp(bgr_img, filepath)    [static method]
+      Writes a BGR NumPy image array as a valid BMP file by constructing the
+      54-byte BMP header manually. Does not require OpenCV or Pillow.
+
+    _on_stop()
+      Stops the QTimer, signals all worker threads to stop, joins them, then
+      stops grabbing and destroys all camera handles cleanly.
+
+    closeEvent(event)
+      Ensures _on_stop() is called when the window is closed so cameras are
+      always released properly.
+
+
+--------------------------------------------------------------------------------
+9. CAMERA LIFECYCLE
+--------------------------------------------------------------------------------
+
+  1. Enumerate GigE devices
+  2. Auto-configure GigE IP addresses (ForceIP if subnet mismatch)
+  3. Re-enumerate GigE after IP assignment
+  4. Enumerate USB devices
+  5. For each camera: CreateHandle -> OpenDevice -> StartGrabbing
+  6. Launch CameraWorker thread per camera
+  7. QTimer polls workers at 33ms -> emit Qt signal -> update UI label
+  8. On stop: StopGrabbing -> CloseDevice -> DestroyHandle
+  9. Worker threads joined before handles are destroyed
+
+
+--------------------------------------------------------------------------------
+10. TROUBLESHOOTING
+--------------------------------------------------------------------------------
+
+  Problem: "No Hikrobot cameras detected" dialog appears
+  Fix   : Install the MVS runtime SDK. Close Hikrobot MVS Studio if it is
+          open, as it holds exclusive access to the cameras.
+
+  Problem: GigE camera shows "OpenDevice failed 0x..."
+  Fix   : Check the network cable. The app will attempt auto-ForceIP on the
+          next start. Verify the network adapter has an assigned IP in the
+          same range as the camera subnet.
+
+  Problem: One or more tiles stay on "No Stream"
+  Fix   : Check the USB or network cable for that specific camera.
+          Look at the Camera Status panel for the exact error message.
+          Console output (stdout) also prints enumeration results.
+
+  Problem: Capture saves 0 files / "no frames available" in status bar
+  Fix   : Start the stream first and wait until live video is visible in
+          all tiles before pressing Capture.
+
+  Problem: GigE cameras assigned same IP
+  Fix   : The ip_offset parameter in auto_configure_gige_ip uses 200 for
+          the first GigE camera and 201 for the second. If conflicts persist,
+          manually set unique IPs using MVS Studio before running the app.
+
+
+--------------------------------------------------------------------------------
+11. KNOWN LIMITATIONS
+--------------------------------------------------------------------------------
+
+  - Camera settings (exposure, gain, white balance, etc.) are NOT set by the
+    application. They must be configured and saved via Hikrobot MVS Studio
+    using UserSet Control -> UserSetSave before running oring_capture.
+
+  - The application does NOT perform any image analysis, defect detection, or
+    pass/fail judgment. It is a synchronized capture utility only.
+
+  - The camera assignment is strictly by device enumeration index:
+    GigE index 0 = Pass 1 Side, GigE index 1 = Pass 2 Side
+    USB  index 0 = Pass 1 Top,  USB  index 1 = Pass 2 Top
+    Swapping physical cameras may require changing the index mapping in code.
+
+  - Only BMP output format is supported. To save as PNG or JPEG, OpenCV or
+    Pillow would need to be added as a dependency.
+
+
+--------------------------------------------------------------------------------
+12. DEPENDENCIES SUMMARY
+--------------------------------------------------------------------------------
+
+  Package            Version      Purpose
+  -------------------|------------|----------------------------------------------
+  PySide6            >= 6.5       GUI framework (Qt6 bindings for Python)
+  numpy              >= 1.21      Frame buffer conversion and BMP pixel data
+  MvCameraControl    (MVS SDK)    Hikrobot camera enumeration and frame capture
+
+
+================================================================================
+  END OF DOCUMENTATION
+================================================================================
