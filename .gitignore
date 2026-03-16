@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Captured images
+pass one/
+pass two/
+side view/
+top view/
+
+# Hikrobot MVS SDK files (copied from SDK installation)
+MvCameraControl_class.py
+CameraParams_header.py
+CameraParams_const.py
+MvErrorDefine_const.py
+MvISPErrorDefine_const.py
+PixelType_header.py
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Generated docs
+*.pdf
